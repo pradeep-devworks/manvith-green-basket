@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="pepper" x1="277" y1="300" x2="640" y2="790" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A8D84C"/>
+      <stop offset=".35" stop-color="#63A922"/>
+      <stop offset=".72" stop-color="#348514"/>
+      <stop offset="1" stop-color="#1E650F"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="320" y1="300" x2="540" y2="700" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E8F7A0" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#E8F7A0" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="stem" x1="280" y1="155" x2="390" y2="250" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6F9E28"/>
+      <stop offset="1" stop-color="#315E16"/>
+    </linearGradient>
+  </defs>
+  <path d="M364 253c-43-43-93-77-142-96-22-9-42 2-47 21-7 28 17 55 58 73 45 20 92 30 138 31l-7-29Z" fill="url(#stem)"/>
+  <path d="M352 231c73-16 171 54 239 163 76 123 112 276 92 404-15 97-69 180-151 236 27-83 4-188-48-296-49-101-122-198-183-281-52-71-81-124-66-168 13-37 57-55 117-58Z" fill="url(#pepper)"/>
+  <path d="M366 252c55-3 124 63 175 147 65 108 96 248 81 354-11 77-45 137-100 181 16-73-8-155-48-238-45-94-108-180-165-256-45-60-68-105-56-137 10-27 48-46 113-51Z" fill="url(#shine)"/>
+  <path d="M341 228c-27-28-49-61-53-91-3-23 7-39 26-42 24-3 48 19 62 48 11 23 15 52 11 82l-46 3Z" fill="#4F7F1B"/>
+  <path d="M355 214c8-29 5-58-8-84" stroke="#B7D768" stroke-width="9" stroke-linecap="round" opacity=".8"/>
+  <path d="M407 292c79 101 156 218 203 336" stroke="#E4F5A0" stroke-width="10" stroke-linecap="round" opacity=".42"/>
+  <path d="M567 887c-13 39-26 74-35 101 32-19 65-49 94-87" fill="#2A7413"/>
+</svg>
