@@ -11,15 +11,11 @@ import {
 import { useRouter } from "expo-router";
 import BrandLogo from "../components/BrandLogo";
 import colors from "../constants/colors";
-import { testSupabaseConnection } from '../lib/testSupabase';
 
 export default function SplashScreen() {
   const router = useRouter();
 
   useEffect(() => {
-    console.log('Starting Supabase test...');
-    testSupabaseConnection();
-
     const timer = setTimeout(() => {
       router.replace("/welcome");
     }, 2000);

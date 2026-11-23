@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Manvith Green Basket",
-    "slug": "manvith-green-basket",
+    "slug": "customer-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/app-icon.png",
@@ -49,6 +49,7 @@
       "eas": {
         "projectId": "f15579ef-70de-424b-8186-302521ad693f"
       }
-    }
+    },
+    "owner": "pradeepthondurudev"
   }
 }

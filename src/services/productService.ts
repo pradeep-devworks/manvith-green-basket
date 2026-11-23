@@ -1,48 +1,35 @@
-
 import { supabase } from '../lib/supabase';
 
-export interface Product {
-  id: string;
-  name: string;
+export interface ProductRecord {
+  product_id: string;
+  product_name: string;
+  slug: string | null;
+  sku: string | null;
+  category_id: string | null;
+  brand_name: string | null;
   description: string | null;
-  category: string | null;
-  price: number;
+  price: number | string;
+  selling_price: number | string;
   unit: string;
-  stock_quantity: number;
+  quantity_step: number | string;
+  minimum_order_quantity: number | string;
+  maximum_order_quantity: number | string | null;
+  is_quantity_editable: boolean;
   image_url: string | null;
-  is_available: boolean;
+  image_alt_text: string | null;
   created_at: string;
   updated_at: string;
+  product_name_te: string | null;
 }
 
-// Fetch all available products
-export async function getProducts(): Promise<Product[]> {
+export async function getProducts(): Promise<ProductRecord[]> {
   const { data, error } = await supabase
     .from('products')
-    .select('*')
-    .eq('is_available', true)
-    .order('name');
+    .select(
+      'product_id, product_name, slug, sku, category_id, brand_name, description, price, selling_price, unit, quantity_step, minimum_order_quantity, maximum_order_quantity, is_quantity_editable, image_url, image_alt_text, created_at, updated_at, product_name_te',
+    )
+    .order('product_name');
 
-  if (error) {
-    throw error;
-  }
-
-  return data ?? [];
-}
-
-// Fetch one product by ID
-export async function getProductById(
-  id: string
-): Promise<Product | null> {
-  const { data, error } = await supabase
-    .from('products')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+  if (error) throw error;
+  return (data ?? []) as ProductRecord[];
 }

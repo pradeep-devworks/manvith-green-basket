@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Modal,
@@ -19,51 +19,162 @@ import type { User } from "@supabase/supabase-js";
 import BottomNavigation, { type AppTab } from "../components/BottomNavigation";
 import colors from "../constants/colors";
 import { supabase } from "../lib/supabase";
-import { getCustomerProfile } from "../services/profileService";
+import { getUserCartItems, saveUserCartItems, type PersistedCartItem } from "../services/cartService";
+import { getCategories, type Category } from "../services/categoryService";
+import { createOrderWithItems, getOrdersWithItems } from "../services/orderService";
+import { getCustomerProfile, saveCustomerProfile } from "../services/profileService";
+import { getProducts, type ProductRecord } from "../services/productService";
 
 type Product = {
   id: string;
   name: string;
   teluguName: string;
-  image: number;
-  imageScale?: number;
+  imageUrl: string | null;
+  imageAltText: string | null;
+  categoryId: string | null;
   category: string;
   description: string;
-  color: string;
-  quantities: string[];
+  unit: string;
+  quantities: number[];
   prices: number[];
 };
 
 type BasketItem = { productId: string; quantityIndex: number; count: number };
-type OrderLine = { productId: string; name: string; teluguName: string; image: number; imageScale?: number; quantity: string; count: number; unitPrice: number };
+type OrderLine = { productId: string; name: string; teluguName: string; imageUrl: string | null; quantity: string; count: number; unitPrice: number };
 type Order = { id: string; name: string; phone: string; address: string; createdAt: string; total: number; items: OrderLine[] };
 
-const PRODUCTS: Product[] = [
-  { id: "green-mirchi", name: "Green Chilli", teluguName: "పచ్చి మిరపకాయలు", image: require("../../assets/images/01_green_mirchi.png"), category: "Green vegetables", description: "Fresh green chillies to add a lively kick to everyday cooking.", color: "#E6F1E2", quantities: ["100 g", "250 g", "500 g"], prices: [12, 28, 52] },
-  { id: "tomato", name: "Tomato", teluguName: "టమాటా", image: require("../../assets/images/02_tomato.png"), category: "Everyday essential", description: "Juicy, ripe tomatoes selected for everyday cooking, salads, and chutneys.", color: "#FCE8E3", quantities: ["250 g", "500 g", "1 kg", "2 kg"], prices: [18, 32, 60, 112] },
-  { id: "potato", name: "Potato", teluguName: "బంగాళాదుంప", image: require("../../assets/images/04_potato.png"), category: "Everyday essential", description: "Versatile farm potatoes, great for curries, fries, and family favourites.", color: "#F5EBDD", quantities: ["500 g", "1 kg", "2 kg"], prices: [22, 40, 76] },
-  { id: "brinjal", name: "Brinjal", teluguName: "వంకాయ", image: require("../../assets/images/03_brinjal.png"), category: "Fresh picks", description: "Glossy, fresh brinjals that soak up the flavour of your favourite masalas.", color: "#EEE7F4", quantities: ["250 g", "500 g", "1 kg"], prices: [20, 38, 72] },
-  { id: "onion", name: "Onion", teluguName: "ఉల్లిపాయ", image: require("../../assets/images/05_onion.png"), category: "Everyday essential", description: "Fresh onions with a balanced flavour, ready for your daily meals.", color: "#F4E7F1", quantities: ["250 g", "500 g", "1 kg", "2 kg"], prices: [16, 29, 55, 104] },
-  { id: "carrot", name: "Carrot", teluguName: "క్యారెట్", image: require("../../assets/images/06_carrot.png"), category: "Root vegetables", description: "Naturally sweet, crunchy carrots for snacking, salads, and cooking.", color: "#FFF0DF", quantities: ["250 g", "500 g", "1 kg"], prices: [24, 45, 86] },
-  { id: "beans", name: "Green Beans", teluguName: "బీన్స్", image: require("../../assets/images/07_beans.png"), category: "Green vegetables", description: "Crisp green beans, ready for a quick and tasty meal.", color: "#E8F2E1", quantities: ["250 g", "500 g", "1 kg"], prices: [24, 45, 86] },
-  { id: "ladies-finger", name: "Ladies Finger", teluguName: "బెండకాయ", image: require("../../assets/images/08_ladies_finger.png"), imageScale: 1.9, category: "Fresh picks", description: "Tender ladies finger, carefully picked for curries and stir-fries.", color: "#E8F2E1", quantities: ["250 g", "500 g", "1 kg"], prices: [22, 42, 80] },
-  { id: "beetroot", name: "Beetroot", teluguName: "బీట్‌రూట్", image: require("../../assets/images/09_beetroot.png"), category: "Root vegetables", description: "Earthy, naturally sweet beetroot for salads, soups, and sides.", color: "#F4E7F1", quantities: ["250 g", "500 g", "1 kg"], prices: [22, 40, 76] },
-  { id: "bitter-gourd", name: "Bitter Gourd", teluguName: "కాకరకాయ", image: require("../../assets/images/10_bitter_gourd.png"), category: "Fresh picks", description: "Fresh bitter gourd, a traditional favourite for home-style curries.", color: "#EAF3E3", quantities: ["250 g", "500 g", "1 kg"], prices: [22, 42, 80] },
-  { id: "ridge-gourd", name: "Ridge Gourd", teluguName: "బీరకాయ", image: require("../../assets/images/11_beerakaya_ridge_gourd.png"), category: "Fresh picks", description: "Tender ridge gourd with a mild flavour, ideal for curries and dals.", color: "#E8F2E1", quantities: ["250 g", "500 g", "1 kg"], prices: [20, 38, 72] },
-  { id: "cauliflower", name: "Cauliflower", teluguName: "కాలీఫ్లవర్", image: require("../../assets/images/12_cauliflower.png"), category: "Fresh picks", description: "Tender cauliflower, carefully picked for curries and roasting.", color: "#F0F1E5", quantities: ["1 pc", "500 g", "1 kg"], prices: [38, 48, 90] },
-  { id: "cabbage", name: "Cabbage", teluguName: "క్యాబేజీ", image: require("../../assets/images/13_cabbage.png"), category: "Fresh picks", description: "Crisp cabbage for salads, stir-fries, and comforting home cooking.", color: "#EAF3E3", quantities: ["1 pc", "500 g", "1 kg"], prices: [30, 42, 78] },
-  { id: "lemon", name: "Lemon", teluguName: "నిమ్మకాయ", image: require("../../assets/images/14_lemon.png"), category: "Fresh picks", description: "Zesty lemons to brighten drinks, dressings, and home-cooked meals.", color: "#F5F2D9", quantities: ["2 pcs", "4 pcs", "6 pcs"], prices: [12, 22, 30] },
-  { id: "cluster-beans", name: "Cluster Beans", teluguName: "గోరుచిక్కుడు", image: require("../../assets/images/15_cluster_beans.png"), category: "Green vegetables", description: "Fresh cluster beans, a delicious addition to traditional curries.", color: "#E8F2E1", quantities: ["250 g", "500 g", "1 kg"], prices: [24, 45, 86] },
-  { id: "chikkudukaya", name: "Chikkudukaya", teluguName: "చిక్కుడుకాయ", image: require("../../assets/images/16_chikkudukaya.png"), category: "Green vegetables", description: "Tender broad beans, a fresh and tasty choice for everyday meals.", color: "#E8F2E1", quantities: ["250 g", "500 g", "1 kg"], prices: [26, 48, 92] },
+
+const CATEGORY_ICON_HINTS: { id: string; label: string; icon: string }[] = [
+  { id: "vegetables", label: "Vegetables", icon: "🥬" },
+  { id: "fruits", label: "Fruits", icon: "🍎" },
+  { id: "groceries", label: "Groceries", icon: "🛒" },
+  { id: "snacks", label: "Snacks", icon: "🍪" },
 ];
+
+function numberValue(value: number | string | null): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function makeQuantityOptions(product: ProductRecord): number[] {
+  const minimum = numberValue(product.minimum_order_quantity);
+  if (!product.is_quantity_editable) return [minimum];
+
+  const step = numberValue(product.quantity_step);
+  const maximum = product.maximum_order_quantity == null ? null : numberValue(product.maximum_order_quantity);
+  if (step <= 0 || (maximum !== null && maximum < minimum)) return [minimum];
+
+  const options: number[] = [];
+  const optionLimit = maximum === null ? 3 : 12;
+  for (let index = 0; index < optionLimit; index += 1) {
+    const quantity = Number((minimum + step * index).toFixed(4));
+    if (maximum !== null && quantity > maximum) break;
+    options.push(quantity);
+  }
+  return options.length ? options : [minimum];
+}
+
+function toProduct(record: ProductRecord, categoryName: string): Product {
+  const quantities = makeQuantityOptions(record);
+  const unitPrice = numberValue(record.selling_price || record.price);
+  return {
+    id: record.product_id,
+    name: record.product_name,
+    teluguName: record.product_name_te ?? "",
+    imageUrl: record.image_url,
+    imageAltText: record.image_alt_text,
+    categoryId: record.category_id,
+    category: categoryName,
+    description: record.description ?? "",
+    unit: record.unit,
+    quantities,
+    prices: quantities.map((quantity) => Number((unitPrice * quantity).toFixed(2))),
+  };
+}
+
+function formatQuantity(quantity: number, unit: string): string {
+  return `${Number(quantity.toFixed(3))} ${unit}`;
+}
+
+function imageSource(imageUrl: string | null) {
+  return imageUrl ? { uri: imageUrl } : undefined;
+}
+
+function priceText(price: number): string {
+  return price.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
+function getCategoryIcon(categoryName: string): string {
+  const normalizedCategory = categoryName.trim().toLowerCase();
+  const matchedHint = CATEGORY_ICON_HINTS.find((hint) => normalizedCategory.includes(hint.id) || normalizedCategory.includes(hint.label.toLowerCase()));
+  if (matchedHint) return matchedHint.icon;
+  if (normalizedCategory.includes("leaf") || normalizedCategory.includes("green")) return "🌿";
+  return "🥕";
+}
+
+function toPersistedCartItems(basketItems: BasketItem[], products: Product[]): PersistedCartItem[] {
+  return basketItems.flatMap((item) => {
+    const product = products.find((entry) => entry.id === item.productId);
+    if (!product) return [];
+    const quantity = product.quantities[item.quantityIndex];
+    if (!Number.isFinite(quantity) || quantity <= 0) return [];
+    return [{
+      product_id: product.id,
+      quantity: Number((quantity * item.count).toFixed(4)),
+    }];
+  });
+}
+
+function toBasketItemsFromPersisted(cartItems: PersistedCartItem[], products: Product[]): BasketItem[] {
+  return cartItems.flatMap((cartItem) => {
+    const product = products.find((entry) => entry.id === cartItem.product_id);
+    if (!product || !product.quantities.length) return [];
+
+    const totalQuantity = Number(cartItem.quantity);
+    if (!Number.isFinite(totalQuantity) || totalQuantity <= 0) return [];
+
+    const exactMatchIndex = product.quantities.findIndex((optionQuantity) => {
+      const count = totalQuantity / optionQuantity;
+      return optionQuantity > 0 && Number.isInteger(Number(count.toFixed(6)));
+    });
+
+    const resolvedQuantityIndex = exactMatchIndex >= 0
+      ? exactMatchIndex
+      : product.quantities.reduce((closestIndex, optionQuantity, index) => {
+        const closestDiff = Math.abs(product.quantities[closestIndex] - totalQuantity);
+        const currentDiff = Math.abs(optionQuantity - totalQuantity);
+        return currentDiff < closestDiff ? index : closestIndex;
+      }, 0);
+
+    const quantityPerPack = product.quantities[resolvedQuantityIndex] || 1;
+    const resolvedCount = Math.max(1, Math.round(totalQuantity / quantityPerPack));
+
+    return [{
+      productId: product.id,
+      quantityIndex: resolvedQuantityIndex,
+      count: resolvedCount,
+    }];
+  });
+}
+
+function formatOrderTimestamp(timestamp: string): string {
+  const parsedDate = new Date(timestamp);
+  if (Number.isNaN(parsedDate.getTime())) return timestamp;
+  return parsedDate.toLocaleString();
+}
 
 export default function HomeScreen() {
   const router = useRouter();
   const routeParams = useLocalSearchParams<{ section?: string }>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const columns = width >= 650 ? 3 : 2;
+  const columns = width >= 650 ? 4 : 3;
   const [query, setQuery] = useState("");
+  const [productRecords, setProductRecords] = useState<ProductRecord[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [productLoadError, setProductLoadError] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedQuantity, setSelectedQuantity] = useState(0);
   const [basket, setBasket] = useState<BasketItem[]>([]);
@@ -76,31 +187,40 @@ export default function HomeScreen() {
   const [formError, setFormError] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [authUser, setAuthUser] = useState<User | null>(null);
+  const [hydratedCartUserId, setHydratedCartUserId] = useState<string | null>(null);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const isHydratingCartRef = useRef(false);
+  const displayName = typeof authUser?.user_metadata.full_name === "string"
+    ? authUser.user_metadata.full_name
+    : typeof authUser?.user_metadata.name === "string"
+      ? authUser.user_metadata.name
+      : authUser?.email?.split("@")[0] || customerName.trim() || "Guest";
 
   useEffect(() => {
     let authStateChanged = false;
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       authStateChanged = true;
       setAuthUser(session?.user ?? null);
+      if (!session?.user) {
+        setBasket([]);
+        setOrders([]);
+        setHydratedCartUserId(null);
+      }
     });
 
     void supabase.auth.getSession().then(({ data }) => {
-      if (!authStateChanged) setAuthUser(data.session?.user ?? null);
+      if (!authStateChanged) {
+        setAuthUser(data.session?.user ?? null);
+        if (!data.session?.user) {
+          setBasket([]);
+          setOrders([]);
+          setHydratedCartUserId(null);
+        }
+      }
     });
 
     return () => authListener.subscription.unsubscribe();
   }, []);
-
-  const userName = typeof authUser?.user_metadata.full_name === "string"
-    ? authUser.user_metadata.full_name
-    : typeof authUser?.user_metadata.name === "string"
-      ? authUser.user_metadata.name
-      : authUser?.email?.split("@")[0];
-  const userAvatarUrl = typeof authUser?.user_metadata.avatar_url === "string"
-    ? authUser.user_metadata.avatar_url
-    : typeof authUser?.user_metadata.picture === "string"
-      ? authUser.user_metadata.picture
-      : null;
 
   useEffect(() => {
     if (!authUser) return;
@@ -115,21 +235,111 @@ export default function HomeScreen() {
   }, [authUser]);
 
   useEffect(() => {
+    let isMounted = true;
+    void Promise.all([getProducts(), getCategories()]).then(([productRows, categoryRows]) => {
+      if (!isMounted) return;
+      setProductRecords(productRows);
+      setCategories(categoryRows);
+      setProductLoadError("");
+    }).catch((error: unknown) => {
+      console.warn("Could not load shop catalogue.", error);
+      if (isMounted) setProductLoadError("We couldn't load products. Check your connection and try again.");
+    }).finally(() => {
+      if (isMounted) setIsLoadingProducts(false);
+    });
+    return () => { isMounted = false; };
+  }, []);
+
+  useEffect(() => {
     if (!cartFeedback) return;
     const timeout = setTimeout(() => setCartFeedback(""), 2200);
     return () => clearTimeout(timeout);
   }, [cartFeedback]);
 
+  const products = useMemo(() => {
+    const categoryNames = new Map(categories.map((category) => [category.category_id, category.category_name]));
+    return productRecords.map((record) => toProduct(record, record.category_id ? categoryNames.get(record.category_id) ?? "" : ""));
+  }, [categories, productRecords]);
+
+  const hasHydratedCart = !authUser || hydratedCartUserId === authUser.id;
+
+  useEffect(() => {
+    if (!authUser) return;
+
+    let active = true;
+    void getOrdersWithItems(authUser.id).then(({ orders: orderRows, itemsByOrderId }) => {
+      if (!active) return;
+
+      const hydratedOrders: Order[] = orderRows.map((orderRow) => ({
+        id: orderRow.order_number,
+        name: orderRow.delivery_name,
+        phone: orderRow.delivery_phone,
+        address: orderRow.delivery_address,
+        createdAt: formatOrderTimestamp(orderRow.created_at),
+        total: Number(orderRow.total_amount),
+        items: (itemsByOrderId.get(orderRow.order_id) ?? []).map((itemRow) => ({
+          productId: itemRow.product_id ?? "",
+          name: itemRow.product_name,
+          teluguName: "",
+          imageUrl: itemRow.product_image_url,
+          quantity: formatQuantity(Number(itemRow.quantity), itemRow.unit),
+          count: 1,
+          unitPrice: Number(itemRow.unit_price),
+        })),
+      }));
+
+      setOrders(hydratedOrders);
+    }).catch((error: unknown) => {
+      console.warn("Could not load saved orders.", error);
+    });
+
+    return () => { active = false; };
+  }, [authUser]);
+
+  useEffect(() => {
+    if (!authUser) return;
+    if (hasHydratedCart || isHydratingCartRef.current) return;
+    if (isLoadingProducts) return;
+
+    let active = true;
+    isHydratingCartRef.current = true;
+    void getUserCartItems(authUser.id).then((cartItems) => {
+      if (!active) return;
+      setBasket(toBasketItemsFromPersisted(cartItems, products));
+      setHydratedCartUserId(authUser.id);
+    }).catch((error: unknown) => {
+      console.warn("Could not load saved cart items.", error);
+      if (active) setHydratedCartUserId(authUser.id);
+    }).finally(() => {
+      if (active) isHydratingCartRef.current = false;
+    });
+
+    return () => { active = false; isHydratingCartRef.current = false; };
+  }, [authUser, hasHydratedCart, isLoadingProducts, products]);
+
+  useEffect(() => {
+    if (!authUser || !hasHydratedCart || isHydratingCartRef.current) return;
+
+    void saveUserCartItems(authUser.id, toPersistedCartItems(basket, products)).catch((error: unknown) => {
+      console.warn("Could not persist cart changes.", error);
+    });
+  }, [authUser, basket, hasHydratedCart, products]);
+
   const cartCount = basket.reduce((sum, item) => sum + item.count, 0);
   const basketTotal = basket.reduce((sum, item) => {
-    const product = PRODUCTS.find((entry) => entry.id === item.productId);
+    const product = products.find((entry) => entry.id === item.productId);
     return sum + (product?.prices[item.quantityIndex] ?? 0) * item.count;
   }, 0);
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return PRODUCTS.filter((product) => !normalizedQuery || `${product.name} ${product.teluguName} ${product.category}`.toLowerCase().includes(normalizedQuery));
-  }, [query]);
+    const hasSelectedDbCategory = !!selectedCategoryId && categories.some((category) => category.category_id === selectedCategoryId);
+    return products.filter((product) => {
+      const matchesCategory = !hasSelectedDbCategory || product.categoryId === selectedCategoryId;
+      const matchesQuery = !normalizedQuery || `${product.name} ${product.teluguName} ${product.category}`.toLowerCase().includes(normalizedQuery);
+      return matchesCategory && matchesQuery;
+    });
+  }, [categories, products, query, selectedCategoryId]);
 
   const openProduct = (product: Product) => {
     setSelectedProduct(product);
@@ -153,8 +363,9 @@ export default function HomeScreen() {
       .filter((item) => item.count > 0));
   };
 
-  const confirmOrder = () => {
+  const confirmOrder = async () => {
     const name = customerName.trim();
+    const address = customerAddress.trim();
     if (!basket.length) {
       setFormError("Add at least one item to your basket.");
       return;
@@ -167,37 +378,98 @@ export default function HomeScreen() {
       setFormError("Enter a valid 10-digit phone number.");
       return;
     }
+    if (!address) {
+      setFormError("Enter your delivery address to place the order.");
+      return;
+    }
+    if (!authUser) {
+      setFormError("Please sign in to place your order.");
+      return;
+    }
 
     const items = basket.flatMap((item) => {
-      const product = PRODUCTS.find((entry) => entry.id === item.productId);
+      const product = products.find((entry) => entry.id === item.productId);
       if (!product) return [];
+      const quantityValue = product.quantities[item.quantityIndex];
+      const unitPrice = product.prices[item.quantityIndex];
       return [{
         productId: product.id,
         name: product.name,
         teluguName: product.teluguName,
-        image: product.image,
-        imageScale: product.imageScale,
-        quantity: product.quantities[item.quantityIndex],
+        imageUrl: product.imageUrl,
+        quantity: formatQuantity(quantityValue, product.unit),
         count: item.count,
-        unitPrice: product.prices[item.quantityIndex],
+        unitPrice,
+        unit: product.unit,
+        totalQuantity: Number((quantityValue * item.count).toFixed(4)),
+        lineTotal: Number((unitPrice * item.count).toFixed(2)),
       }];
     });
-    const total = items.reduce((sum, item) => sum + item.unitPrice * item.count, 0);
-    const newOrder: Order = {
-      id: `GB-${Date.now().toString().slice(-6)}`,
-      name,
-      phone: customerPhone,
-      address: customerAddress.trim(),
-      createdAt: new Date().toLocaleString(),
-      total,
-      items,
-    };
 
-    setOrders((previous) => [newOrder, ...previous]);
-    setLastConfirmedOrder(newOrder);
-    setBasket([]);
+    if (!items.length) {
+      setFormError("Add at least one valid product to your basket.");
+      return;
+    }
+
+    setIsSavingOrder(true);
     setFormError("");
-    router.setParams({ section: "orders" });
+
+    try {
+      await saveCustomerProfile({
+        fullName: name,
+        phone: customerPhone,
+        address,
+      });
+
+      const persistedOrder = await createOrderWithItems({
+        userId: authUser.id,
+        deliveryName: name,
+        deliveryPhone: customerPhone,
+        deliveryAddress: address,
+        items: items.map((item) => ({
+          product_id: item.productId,
+          product_name: item.name,
+          product_image_url: item.imageUrl,
+          unit: item.unit,
+          quantity: item.totalQuantity,
+          unit_price: item.totalQuantity > 0 ? Number((item.lineTotal / item.totalQuantity).toFixed(2)) : item.unitPrice,
+          line_total: item.lineTotal,
+        })),
+      });
+
+      const newOrder: Order = {
+        id: persistedOrder.order_number,
+        name,
+        phone: customerPhone,
+        address,
+        createdAt: formatOrderTimestamp(persistedOrder.created_at),
+        total: Number(persistedOrder.total_amount),
+        items: items.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          teluguName: item.teluguName,
+          imageUrl: item.imageUrl,
+          quantity: item.quantity,
+          count: item.count,
+          unitPrice: item.unitPrice,
+        })),
+      };
+
+      setOrders((previous) => [newOrder, ...previous]);
+      setLastConfirmedOrder(newOrder);
+      setBasket([]);
+      if (hasHydratedCart) {
+        void saveUserCartItems(authUser.id, []).catch((error: unknown) => {
+          console.warn("Could not clear saved cart after order.", error);
+        });
+      }
+      router.setParams({ section: "orders" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not place order right now. Please try again.";
+      setFormError(message);
+    } finally {
+      setIsSavingOrder(false);
+    }
   };
 
   const selectTab = (tab: AppTab) => {
@@ -209,19 +481,16 @@ export default function HomeScreen() {
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" />
       <View style={[styles.topBar, styles.fixedTopBar]}>
-        <View style={styles.greetingGroup}>
-          <View style={styles.avatar}>
-            {userAvatarUrl ? (
-              <Image source={{ uri: userAvatarUrl }} style={styles.avatarImage} contentFit="cover" />
-            ) : (
-              <Text style={styles.avatarIcon}>{userName?.charAt(0).toUpperCase() || "G"}</Text>
-            )}
-          </View>
-          <View>
-            <Text style={styles.eyebrow}>GOOD DAY</Text>
-            <Text style={styles.guestName}>{userName || customerName.trim() || "Guest"}</Text>
-          </View>
+        <Pressable style={styles.menuButton} onPress={() => router.push("/profile")} accessibilityLabel="Open profile">
+          <Text style={styles.menuButtonText}>☰</Text>
+        </Pressable>
+        <View style={styles.brandTitle}>
+          <Text numberOfLines={1} style={styles.brandTitleName}>{displayName}</Text>
         </View>
+        <Pressable style={styles.headerCart} onPress={() => router.setParams({ section: "cart" })} accessibilityLabel={`Open cart, ${cartCount} items`}>
+          <Text style={styles.headerCartIcon}>🛒</Text>
+          {cartCount > 0 ? <Text style={styles.headerCartBadge}>{cartCount}</Text> : null}
+        </Pressable>
       </View>
 
       {activeSection === "shop" && (
@@ -230,7 +499,7 @@ export default function HomeScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search vegetables"
+            placeholder="Search fresh vegetables..."
             placeholderTextColor="#829184"
             style={styles.searchInput}
             returnKeyType="search"
@@ -251,17 +520,55 @@ export default function HomeScreen() {
         columnWrapperStyle={styles.productRow}
         ListHeaderComponent={activeSection === "shop" ? (
           <View>
-            <View style={styles.headlineBlock}>
-              <Text style={styles.headline}>Fresh picks,</Text>
-              <Text style={styles.headlineAccent}>picked for you <Text style={styles.leaf}>*</Text></Text>
-              <Text style={styles.subtitle}>Fresh vegetables and everyday essentials, delivered to your home.</Text>
+            <View style={styles.heroBanner}>
+              <View style={styles.heroImageLayer}>
+                <Image
+                  source={require("../../assets/images/home_banner.png")}
+                  style={styles.heroImage}
+                  contentFit="cover"
+                  contentPosition="right center"
+                  accessibilityLabel="Basket of fresh vegetables"
+                />
+              </View>
+              <View style={styles.heroBlendMask} />
+              <View style={styles.heroTextBlock}>
+                <Text style={styles.heroBrand}>Manvith Green Basket</Text>
+                <Text style={styles.heroTitle}>Quality Vegetables,{"\n"}Chosen for Your Kitchen.</Text>
+                <Text style={styles.heroSubtitle}>Good quality vegetables for everyday meals.</Text>
+              </View>
             </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryList}
+              accessibilityLabel="Product categories"
+            >
+              {/* categories from database */}
+              {false && (
+                <Text style={styles.categoryPillIcon}>🥬</Text>
+              )}
+              {categories.map((category) => {
+                const isSelected = selectedCategoryId === category.category_id;
+                return (
+                  <Pressable
+                    key={category.category_id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    onPress={() => setSelectedCategoryId(category.category_id)}
+                    style={[styles.categoryPill, isSelected && styles.categoryPillSelected]}
+                  >
+                    <Text style={styles.categoryPillIcon}>{getCategoryIcon(category.category_name)}</Text>
+                    <Text numberOfLines={1} style={[styles.categoryPillText, isSelected && styles.categoryPillTextSelected]}>{category.category_name}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
             <View style={styles.sectionHeading}>
               <View>
-                <Text style={styles.sectionTitle}>Today&apos;s vegetables</Text>
+                <Text style={styles.sectionTitle}>Today&apos;s fresh picks</Text>
                 <Text style={styles.sectionSubtitle}>Handpicked for your kitchen</Text>
               </View>
-              <Text style={styles.viewLabel}>FRESH DAILY</Text>
+              <Pressable onPress={() => setSelectedCategoryId(null)} accessibilityRole="button"><Text style={styles.seeAllLabel}>See all</Text></Pressable>
             </View>
           </View>
         ) : activeSection === "orders" ? (
@@ -290,7 +597,7 @@ export default function HomeScreen() {
                 </View>
                 {order.items.map((item, index) => (
                   <View key={`${order.id}-${item.productId}-${index}`} style={styles.orderLine}>
-                    <Image source={item.image} style={[styles.orderLineImage, { transform: [{ scale: Math.min(item.imageScale ?? 1, 2) }] }]} contentFit="contain" accessibilityLabel={item.name} />
+                    {item.imageUrl ? <Image source={imageSource(item.imageUrl)} style={styles.orderLineImage} contentFit="contain" accessibilityLabel={item.name} /> : <View style={styles.orderLineImage} />}
                     <View style={styles.orderLineDetails}>
                       <Text style={styles.orderItemText}>{item.teluguName} / {item.name}</Text>
                       <Text style={styles.orderMeta}>{item.quantity} x {item.count}</Text>
@@ -327,22 +634,22 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.quantityTitle}>Items</Text>
             {basket.length ? basket.map((item) => {
-              const product = PRODUCTS.find((entry) => entry.id === item.productId);
+              const product = products.find((entry) => entry.id === item.productId);
               if (!product) return null;
               const unitPrice = product.prices[item.quantityIndex];
               return (
                 <View key={`${item.productId}-${item.quantityIndex}`} style={styles.basketItem}>
-                  <View style={styles.basketItemImage}><Image source={product.image} style={styles.basketItemPhoto} contentFit="contain" accessibilityLabel={product.name} /></View>
+                  <View style={styles.basketItemImage}>{product.imageUrl ? <Image source={imageSource(product.imageUrl)} style={styles.basketItemPhoto} contentFit="contain" accessibilityLabel={product.imageAltText || product.name} /> : null}</View>
                   <View style={styles.basketItemDetails}>
                     <Text style={styles.basketItemName}>{product.name}</Text>
-                    <Text style={styles.basketItemMeta}>{product.quantities[item.quantityIndex]} / INR {unitPrice}</Text>
+                    <Text style={styles.basketItemMeta}>{formatQuantity(product.quantities[item.quantityIndex], product.unit)} / INR {priceText(unitPrice)}</Text>
                     <View style={styles.quantityStepper}>
                       <Pressable onPress={() => changeBasketCount(item.productId, item.quantityIndex, -1)} style={styles.stepperButton} accessibilityLabel={`Remove one ${product.name}`}><Text style={styles.stepperText}>-</Text></Pressable>
                       <Text style={styles.stepperCount}>{item.count}</Text>
                       <Pressable onPress={() => changeBasketCount(item.productId, item.quantityIndex, 1)} style={styles.stepperButton} accessibilityLabel={`Add one ${product.name}`}><Text style={styles.stepperText}>+</Text></Pressable>
                     </View>
                   </View>
-                  <Text style={styles.basketLineTotal}>INR {unitPrice * item.count}</Text>
+                  <Text style={styles.basketLineTotal}>INR {priceText(unitPrice * item.count)}</Text>
                 </View>
               );
             }) : (
@@ -359,29 +666,50 @@ export default function HomeScreen() {
                 <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Delivery</Text><Text style={styles.freeDelivery}>Free</Text></View>
                 <View style={[styles.summaryRow, styles.summaryTotalRow]}><Text style={styles.basketTotalLabel}>Total</Text><Text style={styles.basketTotalValue}>INR {basketTotal}</Text></View>
               </View>
-              <Pressable onPress={confirmOrder} style={styles.confirmButton} accessibilityRole="button"><Text style={styles.confirmButtonText}>Place order · INR {basketTotal}</Text></Pressable>
-              <Text style={styles.dummyNote}>Order details are saved for this app session.</Text>
+              <Pressable onPress={() => { void confirmOrder(); }} disabled={isSavingOrder} style={[styles.confirmButton, isSavingOrder && styles.confirmButtonDisabled]} accessibilityRole="button"><Text style={styles.confirmButtonText}>{isSavingOrder ? "Placing order..." : `Place order · INR ${basketTotal}`}</Text></Pressable>
+              <Text style={styles.dummyNote}>Order and cart updates are saved to your account.</Text>
             </>}
           </View>
         )}
-        ListEmptyComponent={activeSection === "shop" ? <View style={styles.emptyState}><Text style={styles.emptyEmoji}>Fresh</Text><Text style={styles.emptyTitle}>No vegetables found</Text><Text style={styles.emptyText}>Try a different search.</Text></View> : undefined}
+        ListEmptyComponent={activeSection === "shop" ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>{isLoadingProducts ? "…" : "Fresh"}</Text>
+            <Text style={styles.emptyTitle}>{isLoadingProducts ? "Loading products" : productLoadError ? "Products unavailable" : "No products found"}</Text>
+            <Text style={styles.emptyText}>{productLoadError || (isLoadingProducts ? "Getting the latest products for you." : "Try a different search or category.")}</Text>
+            {productLoadError ? (
+              <Pressable onPress={() => {
+                setIsLoadingProducts(true);
+                setProductLoadError("");
+                void Promise.all([getProducts(), getCategories()]).then(([productRows, categoryRows]) => {
+                  setProductRecords(productRows);
+                  setCategories(categoryRows);
+                }).catch((error: unknown) => {
+                  console.warn("Could not reload shop catalogue.", error);
+                  setProductLoadError("We couldn't load products. Check your connection and try again.");
+                }).finally(() => setIsLoadingProducts(false));
+              }} style={styles.continueShoppingButton}>
+                <Text style={styles.continueShoppingText}>Try again</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : undefined}
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${item.name}, from ₹${item.prices[0]}. Tap for details.`}
+            accessibilityLabel={`${item.name}, from ?${priceText(item.prices[0])}. Tap for details.`}
             onPress={() => openProduct(item)}
             style={({ pressed }) => [styles.productCard, { width: `${100 / columns - 2}%` }, pressed && styles.cardPressed]}
           >
             <View style={styles.productImage}>
-              <Image source={item.image} style={[styles.productPhoto, { transform: [{ scale: item.imageScale ?? 1 }] }]} contentFit="contain" accessibilityLabel={item.name} />
+              {item.imageUrl ? <Image source={imageSource(item.imageUrl)} style={styles.productPhoto} contentFit="contain" accessibilityLabel={item.imageAltText || item.name} /> : null}
               <View style={styles.freshTag}><View style={styles.freshDot} /><Text style={styles.freshTagText}>FRESH</Text></View>
             </View>
             <View style={styles.cardInfo}>
               <Text numberOfLines={1} style={styles.productTelugu}>{item.teluguName}</Text>
               <Text numberOfLines={1} style={styles.productName}>{item.name}</Text>
-              <Text style={styles.productWeight}>From {item.quantities[0]}</Text>
+              <Text style={styles.productWeight}>From {formatQuantity(item.quantities[0], item.unit)}</Text>
               <View style={styles.cardBottom}>
-                <Text style={styles.productPrice}>₹{item.prices[0]}<Text style={styles.priceUnit}> / {item.quantities[0]}</Text></Text>
+                <Text style={styles.productPrice}>INR {priceText(item.prices[0])}<Text style={styles.priceUnit}> / {formatQuantity(item.quantities[0], item.unit)}</Text></Text>
                 <Pressable accessibilityRole="button" accessibilityLabel={`Add ${item.name} to basket`} onPress={(event) => { event.stopPropagation(); addToBasket(item, 0); }} style={styles.addButton}><Text style={styles.addButtonText}>+</Text></Pressable>
               </View>
             </View>
@@ -400,7 +728,7 @@ export default function HomeScreen() {
             <View style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}>
               <View style={styles.sheetHandle} />
               <ScrollView showsVerticalScrollIndicator={false}>
-                <View style={styles.detailImage}><Image source={selectedProduct.image} style={[styles.detailPhoto, { transform: [{ scale: selectedProduct.imageScale ?? 1 }] }]} contentFit="contain" accessibilityLabel={selectedProduct.name} /></View>
+                <View style={styles.detailImage}>{selectedProduct.imageUrl ? <Image source={imageSource(selectedProduct.imageUrl)} style={styles.detailPhoto} contentFit="contain" accessibilityLabel={selectedProduct.imageAltText || selectedProduct.name} /> : null}</View>
                 <Text style={styles.detailCategory}>{selectedProduct.category.toUpperCase()}</Text>
                 <Text style={styles.detailTelugu}>{selectedProduct.teluguName}</Text>
                 <Text style={styles.detailName}>{selectedProduct.name}</Text>
@@ -409,15 +737,15 @@ export default function HomeScreen() {
                 <View style={styles.quantityOptions}>
                   {selectedProduct.quantities.map((quantity, index) => (
                     <Pressable key={quantity} onPress={() => setSelectedQuantity(index)} style={[styles.quantityOption, selectedQuantity === index && styles.quantityOptionSelected]}>
-                      <Text style={[styles.quantityLabel, selectedQuantity === index && styles.quantityLabelSelected]}>{quantity}</Text>
-                      <Text style={[styles.quantityPrice, selectedQuantity === index && styles.quantityLabelSelected]}>₹{selectedProduct.prices[index]}</Text>
+                      <Text style={[styles.quantityLabel, selectedQuantity === index && styles.quantityLabelSelected]}>{formatQuantity(quantity, selectedProduct.unit)}</Text>
+                      <Text style={[styles.quantityPrice, selectedQuantity === index && styles.quantityLabelSelected]}>INR {priceText(selectedProduct.prices[index])}</Text>
                     </Pressable>
                   ))}
                 </View>
                 <Pressable style={styles.addToCartButton} onPress={() => { addToBasket(selectedProduct, selectedQuantity); setSelectedProduct(null); }}>
-                  <Text style={styles.addToCartText}>Add to basket · ₹{selectedProduct.prices[selectedQuantity]}</Text>
+                  <Text style={styles.addToCartText}>Add to basket - INR {priceText(selectedProduct.prices[selectedQuantity])}</Text>
                 </Pressable>
-                <Text style={styles.dummyNote}>Sample prices for preview</Text>
+                <Text style={styles.dummyNote}>Prices shown are from the latest catalogue.</Text>
               </ScrollView>
             </View>
           )}
@@ -433,10 +761,18 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   productList: { flex: 1 },
-  listContent: { paddingHorizontal: 20, paddingTop: 12, flexGrow: 1 },
-  productRow: { justifyContent: "space-between", marginBottom: 14 },
+  listContent: { paddingHorizontal: 20, paddingTop: 6, flexGrow: 1 },
+  productRow: { justifyContent: "space-between", marginBottom: 10 },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  fixedTopBar: { marginHorizontal: 20, marginTop: 10, marginBottom: 14 },
+  fixedTopBar: { marginHorizontal: 20, marginTop: 8, marginBottom: 12, minHeight: 44 },
+  menuButton: { width: 34, height: 38, justifyContent: "center" },
+  menuButtonText: { color: colors.primary, fontSize: 22, fontWeight: "700" },
+  brandTitle: { flex: 1, marginLeft: 12 },
+  brandTitleName: { color: colors.primary, fontSize: 17, fontWeight: "900", lineHeight: 19 },
+  brandTitleSubtitle: { color: colors.primary, fontSize: 13, fontWeight: "800", lineHeight: 16 },
+  headerCart: { width: 42, height: 38, alignItems: "center", justifyContent: "center", position: "relative" },
+  headerCartIcon: { fontSize: 22 },
+  headerCartBadge: { position: "absolute", top: -1, right: 0, minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8, overflow: "hidden", backgroundColor: "#E94C36", color: colors.white, textAlign: "center", fontSize: 10, fontWeight: "800" },
   greetingGroup: { flexDirection: "row", alignItems: "center", gap: 11 },
   avatar: { width: 45, height: 45, borderRadius: 23, backgroundColor: "#E4F0E2", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#D5E6D2" },
   avatarImage: { width: "100%", height: "100%", borderRadius: 23 },
@@ -449,28 +785,43 @@ const styles = StyleSheet.create({
   leaf: { color: "#78A94F", fontSize: 22 },
   subtitle: { marginTop: 6, fontSize: 13, color: colors.secondaryText },
   searchBar: { height: 52, flexDirection: "row", alignItems: "center", marginHorizontal: 20, marginBottom: 4, paddingHorizontal: 15, borderRadius: 16, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border },
+  categoryList: { gap: 8, paddingTop: 10, paddingBottom: 2, paddingRight: 6 },
+  categoryPill: { minHeight: 34, paddingHorizontal: 11, borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: "#DDE6DA", flexDirection: "row", alignItems: "center", gap: 6 },
+  categoryPillSelected: { backgroundColor: colors.lightGreen, borderColor: "#94C496" },
+  categoryPillIcon: { fontSize: 13, lineHeight: 15 },
+  categoryPillText: { color: colors.darkText, fontSize: 12, fontWeight: "700" },
+  categoryPillTextSelected: { color: colors.primary },
+  heroBanner: { width: "100%", aspectRatio: 2.2, marginTop: 0, paddingLeft: 14, paddingRight: 12, paddingVertical: 12, borderRadius: 16, backgroundColor: "#276A2D", overflow: "hidden", justifyContent: "center", position: "relative" },
+  heroImageLayer: { position: "absolute", top: 0, bottom: 0, right: 0, width: "62%", backgroundColor: "#276A2D" },
+  heroBlendMask: { position: "absolute", top: 0, bottom: 0, left: "34%", width: "16%", backgroundColor: "rgba(39,106,45,0.7)" },
+  heroTextBlock: { width: "40%", maxWidth: "40%", justifyContent: "center", zIndex: 1 },
+  heroBrand: { marginBottom: 6, color: "#E3F4C8", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  heroTitle: { color: colors.white, fontSize: 16, lineHeight: 20, fontWeight: "900" },
+  heroSubtitle: { marginTop: 7, color: "#F0F8E9", fontSize: 10, lineHeight: 14, fontWeight: "600" },
+  heroImage: { position: "absolute", right: -12, bottom: -6, width: "118%", height: "118%" },
+  seeAllLabel: { color: colors.primary, fontSize: 12, fontWeight: "800" },
   searchIcon: { color: colors.primary, fontSize: 27, lineHeight: 30, marginRight: 8 },
   searchInput: { flex: 1, height: "100%", color: colors.darkText, fontSize: 14 },
   clearSearch: { fontSize: 24, color: colors.secondaryText, paddingHorizontal: 4 },
-  sectionHeading: { marginTop: 27, marginBottom: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sectionHeading: { marginTop: 12, marginBottom: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionTitle: { fontSize: 18, fontWeight: "800", color: colors.darkText },
   sectionSubtitle: { marginTop: 3, fontSize: 12, color: colors.secondaryText },
   viewLabel: { color: colors.primary, fontSize: 9, fontWeight: "800", letterSpacing: 1, backgroundColor: "#E9F2E4", paddingHorizontal: 9, paddingVertical: 7, borderRadius: 9, overflow: "hidden" },
-  productCard: { backgroundColor: colors.white, borderRadius: 19, padding: 8, borderWidth: 1, borderColor: "#E8EDE5", overflow: "hidden" },
+  productCard: { backgroundColor: colors.white, borderRadius: 15, padding: 6, borderWidth: 1, borderColor: "#E8EDE5", overflow: "hidden" },
   cardPressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
-  productImage: { height: 140, borderRadius: 14, backgroundColor: colors.white, alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" },
-  productPhoto: { width: 136, height: 136 },
+  productImage: { height: 90, borderRadius: 12, backgroundColor: colors.white, alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" },
+  productPhoto: { width: 88, height: 88 },
   freshTag: { position: "absolute", top: 9, left: 8, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.88)", borderRadius: 7, paddingHorizontal: 6, paddingVertical: 4 },
   freshDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#55A85A" },
   freshTagText: { color: colors.primary, fontSize: 8, fontWeight: "800", letterSpacing: 0.4 },
   cardInfo: { paddingHorizontal: 4, paddingTop: 10, paddingBottom: 3 },
-  productName: { color: colors.darkText, fontSize: 14, fontWeight: "800" },
+  productName: { color: colors.darkText, fontSize: 11, fontWeight: "800" },
   productTelugu: { marginTop: 2, color: colors.secondaryText, fontSize: 12 },
   productWeight: { marginTop: 3, color: colors.secondaryText, fontSize: 11 },
   cardBottom: { marginTop: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  productPrice: { color: colors.primary, fontSize: 15, fontWeight: "800" },
-  priceUnit: { color: colors.secondaryText, fontSize: 9, fontWeight: "500" },
-  addButton: { minHeight: 34, paddingHorizontal: 13, borderRadius: 11, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
+  productPrice: { color: colors.darkText, fontSize: 10, fontWeight: "800" },
+  priceUnit: { color: colors.secondaryText, fontSize: 8, fontWeight: "500" },
+  addButton: { minHeight: 23, minWidth: 23, paddingHorizontal: 6, borderRadius: 7, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
   addButtonText: { color: colors.white, fontSize: 12, fontWeight: "800" },
   toast: { position: "absolute", left: 20, right: 20, bottom: 88, minHeight: 46, paddingHorizontal: 16, borderRadius: 14, backgroundColor: colors.darkText, flexDirection: "row", alignItems: "center", gap: 10, zIndex: 5 },
   toastCheck: { color: colors.lightGreen, fontSize: 11, fontWeight: "900" },
@@ -555,5 +906,6 @@ const styles = StyleSheet.create({
   basketTotalLabel: { color: colors.darkText, fontSize: 16, fontWeight: "800" },
   basketTotalValue: { color: colors.primary, fontSize: 21, fontWeight: "900" },
   confirmButton: { minHeight: 52, marginTop: 14, borderRadius: 15, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
+  confirmButtonDisabled: { opacity: 0.7 },
   confirmButtonText: { color: colors.white, fontSize: 15, fontWeight: "800" },
 });
